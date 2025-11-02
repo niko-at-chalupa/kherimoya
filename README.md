@@ -3,7 +3,7 @@
 
   <small>/kɛrɪˈmoʊjə/ care-ih-moh-ya</small>
 
-# kherimoya - server manager through [endstone](https://github.com/EndstoneMC/endstone)
+# Kherimoya - Minecraft Bedrock Server Through [Endstone](https://github.com/EndstoneMC/endstone)
 </div>
 
 > [!WARNING]
@@ -19,10 +19,12 @@ Kherimoya is very early in its development, and right now is only good for manag
 ## kheremara
 Kheremara is an umbrella identity used for things like plugins *(just plugins right now)* that utilize Kherimoya's features like its file structure
 
+It's also its own project, in a way.
+
 ## features
 
 ## planned features
-The following features **WILL** be included in Kherimoya in the future.
+The following features <strong>WILL</strong> be included in Kherimoya in the future.
 <ul>
     <li>Kherimoya endstone plugin, that can do things like tell the status of the server and communicate with Kherimoya
     <li>Move to python instead of shell
@@ -33,18 +35,10 @@ The following features **WILL** be included in Kherimoya in the future.
 The following features <strong>MAY</strong> be includeded in Kherimoya in the future
 <ul>
     <li>Extensions
-    <li>Custom API for plugins
-    <li>Windows compatability
+    <li>Custom API for Endstone plugins
+    <li>Native Windows compatability
 </ul>
 
 ## setup
 
-### Linux instructions
-1. Clone the repo
-    ```bash
-    git clone https://github.com/chalupa-muntinlupa/kherimoya
-    ```
-2. Go in each script, and change the MARA_PATH= & PROJECT_PATH=. MARA_PATH is the path to a directory which has a python env called "maraenv" that has Endstone installed, and PROJECT_PATH is the location of Kherimoya's root. *(This step will no longer be needed in Kherimoya's next update, where we upgrade our scripts)*
-   
-...And that's it! Please don't install this, it's not ready for actual use right now.
-
+As this is unfished, you can't really set this up, I'm sorry.
