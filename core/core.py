@@ -218,8 +218,22 @@ class ServerManager:
     # --- initialization --- #
 
     def __init__(self, project_path: Path, strict_names: bool = True):
-        self.project_path = project_path
-        self.strict_names = strict_names
+        self._project_path = project_path
+        self._strict_names = strict_names
+
+    @property
+    def project_path(self) -> Path:
+        """
+        The path to the Kherimoya project.
+        """
+        return self._project_path
+
+    @property
+    def strict_names(self) -> bool:
+        """
+        Whether or not server names must be unique.
+        """
+        return self._strict_namess
 
     # --- methods --- #
 
@@ -236,7 +250,7 @@ class ServerManager:
             OR a plain list with strings of the name and/or id of each server.
 
         Example:
-            ```
+            ```python
             # Get all servers as (name, id) tuples (default behavior)
             # Type checker sees: list[tuple[str, str | None]]
             tuples = list_servers() # [('server1', '2392839'), ('server2', '9398239')]
