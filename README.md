@@ -36,7 +36,7 @@ The following features <strong>WILL</strong> be included in Kherimoya in the fut
 The following features <strong>MAY</strong> be includeded in Kherimoya in the future
 <ul>
     <li>Custom API for Endstone plugins
-    <li><s>Native Windows compatability</s> <i>We will force users to use WSL rather than making it compatible. This is because Kherimoya will heavily rely on tmux)</i>
+    <li><s>Native Windows compatability</s> <i>We will force users to use WSL rather than making it compatible. This is because Kherimoya will heavily rely on tmux</i>
 </ul>
 
 Kherimoya **will** be mostly just a backend for server management. This means you could make your own UI's, and ways of management *(e.g. A server hosting service which uses Kherimoya in the backend.)*
