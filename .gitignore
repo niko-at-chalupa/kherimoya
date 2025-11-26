@@ -2,3 +2,5 @@ servers/*/
 venvKherimoya/
 .directory
 .old
+__pycache__/
+venv/

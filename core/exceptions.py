@@ -6,3 +6,6 @@ class ServerNotInPathError(Exception):
 
 class ServerDoesNotExistError(Exception):
     """Raised when a method which requires the server to exist is fired when it does not"""
+
+class ServerCreationError(Exception):
+    """Raised when a server could not be created"""

@@ -1,21 +1,26 @@
 from pathlib import Path
-from core import exceptions
+from . import exceptions
 import uuid
 import json
-import os
+import libtmux
+import endstone
 from typing import Literal
 import hashlib
 import time
 import subprocess
+import warnings
 
 PROJECT_PATH = Path(__file__).parent.parent.resolve()
-if PROJECT_PATH.name.lower() != "kherimoya":
-    raise exceptions.KherimoyaPathNotFoundError
+if not Path(PROJECT_PATH / "core").is_dir():
+    raise exceptions.KherimoyaPathNotFoundError(
+        f"Kherimoya root path could not be resolved. Expected to find core/ in {PROJECT_PATH}"
+    )
 
+DELIMITER = "@"
 
 class KherimoyaServer:
     """
-    Represents a servever in servers/, existing or nonexisting.
+    Represents a server in servers/, existing or one which does not exist (to work as a placeholder).
     """
     # --- initialization --- #
 
@@ -54,7 +59,8 @@ class KherimoyaServer:
             pass
 
         def _start_through_plugin(self, server):
-            # TODO: When the plugin is finished, make it use the port for the server. {ip}:{port}/{name}:{id}/start_server
+            # TODO: When the plugin is finished, make it use the port for the server.
+            # Example URI: {ip}:{port}/{name}{DELIMITER}{id}/start_server
             pass
         
         def stop_server(self, method: Literal["screen", "plugin"] = "screen") -> None:
@@ -81,7 +87,8 @@ class KherimoyaServer:
             pass
 
         def _stop_through_plugin(self, server):
-            # TODO: When the plugin is finished, make it use the port for the server to stop the server. {ip}:{port}/{name}:{id}/start_server
+            # TODO: When the plugin is finished, make it use the port for the server to stop the server.
+            # Example URI: {ip}:{port}/{name}{DELIMITER}{id}/stop_server
             pass
 
     def __init__(self, project_path: Path, name: str, server_id: str | None = None):
@@ -89,7 +96,7 @@ class KherimoyaServer:
         self._name = name
 
         if server_id:
-            self._path = Path(project_path / "servers" / f"{name}:{server_id}").resolve()
+            self._path = Path(project_path / "servers" / f"{name}{DELIMITER}{server_id}").resolve()
             self._server_id = server_id
         else:
             self._path = Path(project_path / "servers" / f"{name}").resolve()
@@ -192,8 +199,8 @@ class KherimoyaServer:
 
         self._path = path
 
-        if ":" in path.name:
-            self._name, self._server_id = path.name.split(":", 1)
+        if DELIMITER in path.name:
+            self._name, self._server_id = path.name.split(DELIMITER, 1)
         else:
             self._name = path.name
             self._server_id = None
@@ -233,7 +240,7 @@ class ServerManager:
         """
         Whether or not server names must be unique.
         """
-        return self._strict_namess
+        return self._strict_names
 
     # --- methods --- #
 
@@ -270,8 +277,8 @@ class ServerManager:
             if not p.is_dir():
                 continue
 
-            if ":" in p.name:
-                name, server_id = p.name.split(":", 1)
+            if DELIMITER in p.name:
+                name, server_id = p.name.split(DELIMITER, 1)
             else:
                 name, server_id = p.name, None
 
@@ -284,12 +291,14 @@ class ServerManager:
 
         return servers
 
-    def create_server(self, server: str | KherimoyaServer) -> KherimoyaServer:
+    def create_server(self, server: str | KherimoyaServer, install_timeout: float | None = 300) -> KherimoyaServer:
         """
         Creates a new server from a string for the name, or a nonexisting KherimoyaServer
 
         Args:
             server (str | KherimoyaServer): A name for the server, or a nonexisting KherimoyaServer
+            install_timeout (float | None = 300): Maximum seconds to wait for endstone to finish initial install/start.
+                If None, wait indefinitely.
 
         Returns:
             KherimoyaServer: The new, existing server.
@@ -297,7 +306,7 @@ class ServerManager:
         Example:
             ```
             # Create a server from a name
-            server1 = ServerManager.create_server("newserver1")
+            server1 = ServerManager.create_server(Path("path/to/your/kherimoya/installation"), "newserver1")
 
             # Create a server from a nonexisting KherimoyaServer
             server2 = KherimoyaServer(PROJECT_PATH, "newserver2")
@@ -312,40 +321,91 @@ class ServerManager:
             new_server = KherimoyaServer(self.project_path, server)
 
         if new_server.exists:
-            raise FileExistsError("Server already exists")
+            raise exceptions.ServerCreationError(f"Server '{new_server.name}' already exists.")
         elif new_server.name in self.list_servers(sole_names=True) and self.strict_names:
-            raise FileExistsError("Server name is already used")
+            raise exceptions.ServerCreationError(f"Server with name '{new_server.name}' already exists, and strict_names is enabled.")
+        elif new_server.name.strip() == "":
+            raise exceptions.ServerCreationError("Server name cannot be empty or whitespace.")
+        elif "-" in new_server.name or ":" in new_server.name or "/" in new_server.name or "\\" in new_server.name or DELIMITER in new_server.name:
+            raise exceptions.ServerCreationError(f"Server name cannot contain '-', ':', '/', '{DELIMITER}', or '\\' characters.")
 
         # - set up the server - #
         new_server._server_id = str(self._generate_unique_id())
 
-        base_path = (self.project_path / "servers" / f"{new_server.name}:{new_server.server_id}").resolve()
+        base_path = (self.project_path / "servers" / f"{new_server.name}{DELIMITER}{new_server.server_id}").resolve()
         base_path.mkdir(parents=False, exist_ok=False)
 
         # - make the filestructure - #
         for subdir in ["config", "extra", "server", "state"]:
             (base_path / subdir).mkdir()
 
-        new_server.refresh(base_path)
+        new_server.refresh(base_path) # sets all attributes and writes to server.json
 
         # - set up with Endstone - #
+        session_name = f'{new_server.name}{DELIMITER}{new_server.server_id}'
+        tmux_server = None
+        session = None
 
-        screen_name = f'{new_server.name}:{new_server.server_id}'
+        try:
+            tmux_server = libtmux.Server()
+            try:
+                existing = tmux_server.find_where({"session_name": session_name})
+                if existing:
+                    existing.kill_session()
+            except Exception as e:
+                pass
 
-        # screen -dmS "$SERVER_SCREEN_NAME" endstone -y -s "$BASE_PATH" -- this is what we're doing
-        subprocess.Popen(["screen", "-dmS", screen_name, "endstone", "-y", "-s", str(base_path)]) # starting an endstone server in an empty directory will cause it to create a new server, then starts the server
-        
-        time.sleep(1) # a second is good
-        while not Path(base_path / "server" / "worlds").is_dir(): # when a BDS server is started for the first time, it generates a number of directories, one being worlds/
-            time.sleep(1) # we wait until the server is started, which is when the server has started
-        time.sleep(1) # wait an extra second for good measure
-        
-        # screen -Rd "$SERVER_SCREEN_NAME" -X stuff "stop $(printf '\r')" -- this is what we're doing
-        subprocess.Popen(["sdaijsijdi\nscreen", "-Rd", screen_name, "-X", "stuff", '"stop\n"']) # the beginning gibberish invalidates the past command, if the user was typing something in
+            session = tmux_server.new_session(session_name=session_name, start_directory=str(base_path / "servers"), attach=False, kill_session=True)
+            window = session.attached_window or session.windows[0]
+            pane = window.attached_pane or window.panes[0]
+            pane.send_keys(f'endstone -y -s {str(Path(base_path / "server"))}', enter=True)
+        except Exception as e:
+            raise exceptions.ServerCreationError(f"Failed to create tmux session for server {session_name}") from e
 
+        # when endstone is ran in an environment which does not have a endstone BDS installed, it will create the server and start it
+        start_time = time.monotonic()
+        sleep_interval = 0.5
+        while not Path(base_path / "server" / "worlds").is_dir():
+            if install_timeout is not None and (time.monotonic() - start_time) > install_timeout:
+                # best-effort cleanup: kill tmux session, then raise
+                try:
+                    if tmux_server:
+                        s = tmux_server.find_where({"session_name": session_name})
+                        if s:
+                            s.kill_session()
+                except Exception:
+                    pass
+                raise TimeoutError(f"Server installation/start did not complete within {install_timeout} seconds.")
+            time.sleep(sleep_interval)
+            sleep_interval = min(2.0, sleep_interval * 1.5)
+
+        time.sleep(1)
+
+        # send stop command, which should gracefully stop the server
+        stopped = False
+        try:
+            if tmux_server:
+                sess = tmux_server.find_where({"session_name": session_name})
+                if sess:
+                    win = sess.attached_window or sess.windows[0]
+                    pane = win.attached_pane or win.panes[0]
+                    pane.send_keys("stop", enter=True)
+                    time.sleep(1)
+                    try:
+                        sess.kill_session()
+                    except Exception:
+                        pass
+                    stopped = True
+        except Exception:
+            stopped = False
+
+        if not stopped:
+            raise exceptions.ServerCreationError(f"failed to stop tmux session for server {session_name}")
+
+        # - finishing up - #
         with open(base_path / "state" / "state.json", "w", encoding="utf-8") as f:
             json.dump({"running": False}, f, indent=4) 
- 
+
         return new_server
 
     def _generate_unique_id(self) -> str:
