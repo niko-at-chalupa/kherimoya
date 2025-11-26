@@ -27,18 +27,21 @@ It's also its own project, in a way.
 The following features <strong>WILL</strong> be included in Kherimoya in the future.
 <ul>
     <li>Kherimoya endstone plugin, that can do things like tell the status of the server and communicate with Kherimoya
-    <li>Move to python instead of shell
-    <li>Better scripts, ones that do not rely on a project path declared in the scripts
-    <li>More features like server status, discord bot, etc... (discord bot may just become extension)
+    <li><b>Move to python instead of shell</b> <i>(currently being worked on)</i>
+    <li><b>Better scripts, ones that do not rely on a project path declared in the scripts</b> <i>(currently being worked on)</i>
+    <li><s>More features like server status, discord bot, etc... (discord bot may just become extension)</s> <i>Features like this will be a part of Kherimoya+.)</i>
     <li>Automatic server backups
+    <li>Extensions
 </ul>
 The following features <strong>MAY</strong> be includeded in Kherimoya in the future
 <ul>
-    <li>Extensions
     <li>Custom API for Endstone plugins
-    <li>Native Windows compatability
+    <li><s>Native Windows compatability</s> <i>We will force users to use WSL rather than making it compatible. This is because Kherimoya will heavily rely on tmux)</i>
 </ul>
+
+Kherimoya **will** be mostly just a backend for server management. This means you could make your own UI's, and ways of management *(e.g. A server hosting service which uses Kherimoya in the backend.)*
+Kherimoya+ will be an optional extension which adds a bunch of different non-essential features into Kherimoya. This is to keep regular Kherimoya lightweight.
 
 ## setup
 
-As this is unfished, you can't really set this up, I'm sorry.
+As this is unfinished, **you can't really set this up**, I'm sorry.
