@@ -1,14 +1,15 @@
+"""Kherimoya server management classes and methods."""
+
 from pathlib import Path
 from . import exceptions
 import uuid
 import json
 import libtmux
-import endstone
-from typing import Literal
-import hashlib
+import endstone # to ensure endstone is installed
+from typing import Literal, cast
+import re
+import secrets
 import time
-import subprocess
-import warnings
 
 PROJECT_PATH = Path(__file__).parent.parent.resolve()
 if not Path(PROJECT_PATH / "core").is_dir():
@@ -16,7 +17,7 @@ if not Path(PROJECT_PATH / "core").is_dir():
         f"Kherimoya root path could not be resolved. Expected to find core/ in {PROJECT_PATH}"
     )
 
-DELIMITER = "@"
+from .constants import DELIMITER
 
 class KherimoyaServer:
     """
@@ -31,58 +32,78 @@ class KherimoyaServer:
         def __init__(self, server: "KherimoyaServer") -> None:
             self.server: KherimoyaServer = server
 
-        def _checkserver(self, text: str=''):
-            if not self.server.exists:
-                raise exceptions.ServerDoesNotExistError(text)
+        def _checkserver(self, requires_exists: bool = True, requires_running: bool = False, reason: str=''):
+            if not self.server.exists and requires_exists:
+                raise exceptions.ServerDoesNotExistError(reason)
+            if requires_running and not self.server.running:
+                raise exceptions.ServerNotRunningError(reason)
 
-        def start_server(self, method: Literal["screen", "plugin"] = "screen"):
+        def start_server(self, method: Literal["tmux", "plugin"] = "tmux"):
             """
             Starts the parent KherimoyaServer.
 
             Args:
-                Method (Literal["screen", "plugin"]): Method in which is how you start the server. Screen will start the server through the screen session, and plugin will use the plugin (which is not yet implemented)
+                Method (Literal["tmux", "plugin"]): Method in which is how you start the server. Screen will start the server through the screen session, and plugin will use the plugin (which is not yet implemented)
             """
-            self._checkserver("Attempted to start a server which does NOT exist")
+            self._checkserver(requires_exists=True, requires_running=False, reason="Attempted to start a server which does NOT exist")
 
             server = self.server
 
-            if method == "screen":
-                self._start_through_screen(server)
+            if method == "tmux":
+                self._start_through_tmux(server)
             elif method == "plugin":
                 raise NotImplementedError('Kherimoya\'s plugin does not exist as of now.')
                 #self._start_through_plugin(server)
             else:
-                raise ValueError(f"Invalid stop method: {method}")
+                raise ValueError(f"Invalid start method: {method}")
         
-        def _start_through_screen(self, server):
+        def _start_through_tmux(self, server):
             # TODO: Make it so that it uses similar logic to our old scripts, where we used screen -dmS "$SERVER_NAME" endstone -y -s "$SERVER_DIR_PATH" to start servers
-            pass
+            session_name = f'{server.name}{DELIMITER}{server.server_id}'
+            tmux_server = None
+            session = None
+
+            try: # start session
+                tmux_server = libtmux.Server()
+                try:
+                    existing = tmux_server.find_where({"session_name": session_name})
+                    if existing:
+                        existing.kill_session()
+                except Exception as e:
+                    pass
+
+                session = tmux_server.new_session(session_name=session_name, start_directory=str(server.path / "server"), attach=False, kill_session=True)
+                window = session.attached_window or session.windows[0]
+                pane = window.attached_pane or window.panes[0]
+                pane.send_keys(f'endstone -y -s {str(server.path / "server")}', enter=True)
+            except Exception as e:
+                raise exceptions.ServerStartError(f"Failed to create tmux session for server {session_name}") from e
 
         def _start_through_plugin(self, server):
             # TODO: When the plugin is finished, make it use the port for the server.
             # Example URI: {ip}:{port}/{name}{DELIMITER}{id}/start_server
             pass
         
-        def stop_server(self, method: Literal["screen", "plugin"] = "screen") -> None:
+        def stop_server(self, method: Literal["tmux", "plugin"] = "tmux") -> None:
             """
             Stops the parent KherimoyaServer.
 
             Args:
-                Method (Literal["screen", "plugin"]): Method in which is how you stop the server. Screen will start the server through the screen session, and plugin will use the plugin (which is not yet implemented)
+                Method (Literal["tmux", "plugin"]): Method in which is how you stop the server. Tmux will stop the server through the tmux session, and plugin will use the plugin (which is not yet implemented)
             """
-            self._checkserver("Attempted to stop a server which does NOT exist")
+            self._checkserver(requires_exists=True, requires_running=True, reason="Attempted to stop a server which does NOT exist/is not running")
 
             server = self.server
 
-            if method == "screen":
-                self._stop_through_screen(server)
+            if method == "tmux":
+                self._stop_through_tmux(server)
             elif method == "plugin":
                 raise NotImplementedError('Kherimoya\'s plugin does not exist as of now.')
                 #self._stop_through_plugin(server)
             else:
                 raise ValueError(f"Invalid stop method: {method}")
 
-        def _stop_through_screen(self, server):
+        def _stop_through_tmux(self, server):
             # TODO: Make it so that it essentially just sends the command "stop" to the server. Do this last because we can do this manually
             pass
 
@@ -102,20 +123,16 @@ class KherimoyaServer:
             self._path = Path(project_path / "servers" / f"{name}").resolve()
             self._server_id = None
 
-        if self._path.is_dir() and self._path.name == name:
-            self._exists = True
-        else:
-            self._exists = False
+        self._exists = self._path.is_dir()
+        if self._exists:
+            if DELIMITER in self._path.name:
+                self._name, self._server_id = self._path.name.split(DELIMITER, 1)
+            else:
+                self._name = self._path.name
+                self._server_id = None
 
         if self._exists:
             self._running = False  # TODO: Load from JSON later
-
-            try:
-                self._server_index = self._get_index_from_id()
-            except exceptions.ServerDoesNotExistError:
-                self._server_index = None
-                self._exists = False
-                self._server_id = None
         else:
             self._running = False
 
@@ -129,7 +146,6 @@ class KherimoyaServer:
 
     # name: str = ''
     # server_id: str | None = None
-    # server_index: int | None = None
     # path: Path
     # exists: bool = False
     # running: bool = False
@@ -143,10 +159,6 @@ class KherimoyaServer:
         return self._server_id
     
     @property
-    def server_index(self) -> int | None:
-        return self._server_index
-    
-    @property
     def path(self) -> Path:
         return self._path
     
@@ -158,14 +170,11 @@ class KherimoyaServer:
     def running(self) -> bool:
         return self._running
 
-    # --- methods --- #
+    @property
+    def actions(self) -> "KherimoyaServer.Actions":
+        return self._actions
 
-    def _get_index_from_id(self, base_port: int = 59100, range_size: int = 1000) -> int:
-        if not self._exists or not self._server_id:
-            raise exceptions.ServerDoesNotExistError("Server must exist and have a valid ID to get index.")
-        
-        hash_value = int(hashlib.sha256(self._server_id.encode()).hexdigest(), 16)
-        return base_port + (hash_value % range_size)
+    # --- methods --- #
 
     def refresh(self, path: Path) -> None:
         """
@@ -177,7 +186,6 @@ class KherimoyaServer:
 
         if not self._exists:
             self._server_id = None
-            return
         
         if not path.is_dir():
             if self._path.is_dir():
@@ -204,6 +212,15 @@ class KherimoyaServer:
         else:
             self._name = path.name
             self._server_id = None
+
+        if not self._path.is_dir():
+            self._exists = False
+            self._server_id = None
+            self._server_index = None
+            return
+        else:
+            self._exists = True
+            self._running = False  # TODO: Load from JSON later
 
         # --- write to json ---
         with open(path / "server.json", "w", encoding="utf-8") as f:
@@ -291,6 +308,25 @@ class ServerManager:
 
         return servers
 
+    def list_server_objects(self) -> list[KherimoyaServer]:
+        """
+        Lists all of the servers in the servers/ directory as KherimoyaServer objects.
+
+        Returns:
+            list[KherimoyaServer]: A list of KherimoyaServer objects for each server found.
+        """
+        server_objects = []
+        all_servers = cast(list[tuple[str, str | None]], self.list_servers())
+        
+        for server in all_servers:
+            try:
+                kherimoya_server = KherimoyaServer(project_path=self.project_path, name=server[0])
+                kherimoya_server.refresh(self.project_path / "servers" / f"{server[0]}{DELIMITER}{server[1]}")
+                server_objects.append(kherimoya_server)
+            except Exception:
+                continue
+        return server_objects
+
     def create_server(self, server: str | KherimoyaServer, install_timeout: float | None = 300) -> KherimoyaServer:
         """
         Creates a new server from a string for the name, or a nonexisting KherimoyaServer
@@ -346,7 +382,7 @@ class ServerManager:
         tmux_server = None
         session = None
 
-        try:
+        try: # start session
             tmux_server = libtmux.Server()
             try:
                 existing = tmux_server.find_where({"session_name": session_name})
@@ -409,8 +445,62 @@ class ServerManager:
         return new_server
 
     def _generate_unique_id(self) -> str:
-        existing = self.list_servers(sole_ids=True)
+        """
+        Generate a short human-readable, hyphen-separated unique ID.
+
+        The ID is groups of 4 characters separated by hyphens e.g.:
+        - "abcd" (1 group)
+        - "abcd-ef12" (2 groups)
+        - "abcd-ef12-3456" (3 groups)
+        and so on.
+        
+        Uses a base36 alphabet (0-9a-z) and generate the shortest group count
+        possible (to keep it easy to read, opposed to UUIDs which generate excessively 
+        long IDs). If the ID space for the current group count is fully occupied
+        (i.e. all possibilities are taken), we extend with an additional group.
+
+        Case is normalized to lowercase, comparisons with existing IDs are
+        case-insensitive.
+        """
+        ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
+        GROUP_SIZE = 4
+        MAX_RANDOM_TRIES = 1000
+
+        # collect existing IDs, lowercased and filter None entries
+        existing = [str(x).lower() for x in self.list_servers(sole_ids=True) if isinstance(x, str) and x is not None]
+        existing_set = set(existing)
+
+        def _random_id(groups: int) -> str:
+            return "-".join("".join(secrets.choice(ALPHABET) for _ in range(GROUP_SIZE)) for _ in range(groups))
+
+        # try group counts starting at 1 and increasing if the space is exhausted
+        for groups in range(1, 10):  # sane upper bound; will fall back to uuid4 if needed
+            # pattern to detect existing IDs at this groups length (lowercase)
+            # e.g. for groups=1 -> ^[0-9a-z]{4}$ ; groups=2 -> ^[0-9a-z]{4}(?:-[0-9a-z]{4}){1}$
+            if groups == 1:
+                pattern = re.compile(rf"^[0-9a-z]{{{GROUP_SIZE}}}$")
+            else:
+                pattern = re.compile(rf"^[0-9a-z]{{{GROUP_SIZE}}}(?:-[0-9a-z]{{{GROUP_SIZE}}}){{{groups-1}}}$")
+
+            existing_of_length = sum(1 for e in existing_set if pattern.match(e))
+            space_size = len(ALPHABET) ** (GROUP_SIZE * groups)
+
+            # if space is frozen (all combos used), try next groups count
+            if existing_of_length >= space_size:
+                continue
+
+            # try to find a new ID with random tries
+            for _ in range(MAX_RANDOM_TRIES):
+                candidate = _random_id(groups)
+                if candidate not in existing_set:
+                    return candidate
+
+            # if we couldn't find a unique ID after MAX_RANDOM_TRIES (very unlikely),
+            # continue to next groups count and try again.
+
+        # as a last fallback (VERY unlikely), generate a uuid4 to be safe.
+        # this keeps compatibility with old long IDs and guarantees uniqueness.
         while True:
-            new_id = str(uuid.uuid4())
-            if new_id not in existing:
-                return new_id
+            candidate = str(uuid.uuid4())
+            if candidate.lower() not in existing_set:
+                return candidate

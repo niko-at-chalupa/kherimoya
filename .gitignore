@@ -4,3 +4,4 @@ venvKherimoya/
 .old
 __pycache__/
 venv/
+.pythonrc.py
