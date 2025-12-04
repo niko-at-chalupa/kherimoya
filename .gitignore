@@ -1,3 +1,8 @@
 servers/*/
 venvKherimoya/
 .directory
+.old
+__pycache__/
+venv/
+.pythonrc.py
+.vscode/
