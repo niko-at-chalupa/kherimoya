@@ -15,3 +15,6 @@ class ServerCreationError(Exception):
 
 class ServerStartError(Exception):
     """Raised when a server could not be started"""
+
+class ServerRenameError(Exception):
+    """Raised when a server could not be renamed"""

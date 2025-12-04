@@ -5,3 +5,4 @@ venvKherimoya/
 __pycache__/
 venv/
 .pythonrc.py
+.vscode/

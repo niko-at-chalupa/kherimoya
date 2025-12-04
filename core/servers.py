@@ -1,6 +1,7 @@
 """Kherimoya server management classes and methods."""
 
 from pathlib import Path
+import shutil
 from . import exceptions
 import uuid
 import json
@@ -233,7 +234,6 @@ class KherimoyaServer:
                 indent=4
             )
 
-
 class ServerManager:
     """
     Holds methods to manage servers.
@@ -261,8 +261,11 @@ class ServerManager:
 
     # --- methods --- #
 
-    def list_servers(self, sole_names: bool = False, sole_ids: bool = False) -> list[tuple[str, str]] | list[str | None]:
+    def _list_servers(self, sole_names: bool = False, sole_ids: bool = False) -> list[tuple[str, str]] | list[str | None]:
         """
+        Private because list_server_* methods should be used instead.
+        Don't use this unless you want issues with type checking!!
+
         Lists all of the servers in the servers/ directory.
 
         Args:
@@ -308,6 +311,24 @@ class ServerManager:
 
         return servers
 
+    def list_server_ids(self) -> list[str | None]:
+        """
+        Lists all of the server IDs in the servers/ directory.
+
+        Returns:
+            list[str | None]: A list of server IDs for each server found.
+        """
+        return cast(list[str | None], self._list_servers(sole_ids=True))
+    
+    def list_server_names(self) -> list[str]:
+        """
+        Lists all of the server names in the servers/ directory.
+
+        Returns:
+            list[str]: A list of server names for each server found.
+        """
+        return cast(list[str], self._list_servers(sole_names=True))
+
     def list_server_objects(self) -> list[KherimoyaServer]:
         """
         Lists all of the servers in the servers/ directory as KherimoyaServer objects.
@@ -316,7 +337,7 @@ class ServerManager:
             list[KherimoyaServer]: A list of KherimoyaServer objects for each server found.
         """
         server_objects = []
-        all_servers = cast(list[tuple[str, str | None]], self.list_servers())
+        all_servers = cast(list[tuple[str, str | None]], self._list_servers())
         
         for server in all_servers:
             try:
@@ -326,6 +347,109 @@ class ServerManager:
             except Exception:
                 continue
         return server_objects
+
+    def get_server_by_id(self, server_id: str) -> KherimoyaServer | None:
+        """
+        Gets a KherimoyaServer by its ID.
+
+        Args:
+            server_id (str): The server ID to look for.
+
+        Returns:
+            KherimoyaServer | None: The KherimoyaServer with the given ID, or None if not found.
+        """
+        all_servers = self.list_server_objects()
+        for server in all_servers:
+            if server.server_id and server.server_id.lower() == server_id.lower():
+                return server
+        return None
+
+    def _generate_unique_id(self) -> str:
+        """
+        Generate a short human-readable, hyphen-separated unique ID.
+
+        The ID is groups of 4 characters separated by hyphens e.g.:
+        - "abcd" (1 group)
+        - "abcd-ef12" (2 groups)
+        - "abcd-ef12-3456" (3 groups)
+        and so on.
+        
+        Uses a base36 alphabet (0-9a-z) and generate the shortest group count
+        possible (to keep it easy to read, opposed to UUIDs which generate excessively 
+        long IDs). If the ID space for the current group count is fully occupied
+        (i.e. all possibilities are taken), we extend with an additional group.
+
+        Case is normalized to lowercase, comparisons with existing IDs are
+        case-insensitive.
+        """
+        ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
+        GROUP_SIZE = 4
+        MAX_RANDOM_TRIES = 1000
+
+        # collect existing IDs, lowercased and filter None entries
+        existing = [str(x).lower() for x in self.list_server_ids() if isinstance(x, str) and x is not None]
+        existing_set = set(existing)
+
+        def _random_id(groups: int) -> str:
+            return "-".join("".join(secrets.choice(ALPHABET) for _ in range(GROUP_SIZE)) for _ in range(groups))
+
+        # try group counts starting at 1 and increasing if the space is exhausted
+        for groups in range(1, 10):  # sane upper bound; will fall back to uuid4 if needed
+            # pattern to detect existing IDs at this groups length (lowercase)
+            # e.g. for groups=1 -> ^[0-9a-z]{4}$ ; groups=2 -> ^[0-9a-z]{4}(?:-[0-9a-z]{4}){1}$
+            if groups == 1:
+                pattern = re.compile(rf"^[0-9a-z]{{{GROUP_SIZE}}}$")
+            else:
+                pattern = re.compile(rf"^[0-9a-z]{{{GROUP_SIZE}}}(?:-[0-9a-z]{{{GROUP_SIZE}}}){{{groups-1}}}$")
+
+            existing_of_length = sum(1 for e in existing_set if pattern.match(e))
+            space_size = len(ALPHABET) ** (GROUP_SIZE * groups)
+
+            # if space is frozen (all combos used), try next groups count
+            if existing_of_length >= space_size:
+                continue
+
+            # try to find a new ID with random tries
+            for _ in range(MAX_RANDOM_TRIES):
+                candidate = _random_id(groups)
+                if candidate not in existing_set:
+                    return candidate
+
+            # if we couldn't find a unique ID after MAX_RANDOM_TRIES (very unlikely),
+            # continue to next groups count and try again.
+
+        # as a last fallback (VERY unlikely), generate a uuid4 to be safe.
+        # this keeps compatibility with old long IDs and guarantees uniqueness.
+        while True:
+            candidate = str(uuid.uuid4())
+            if candidate.lower() not in existing_set:
+                return candidate
+
+    def resolve_id_conflicts(self) -> None:
+        """
+        Resolves possible ID conflicts among existing servers by checking each one for conflicts, then generating a new unique ID for certain servers if needed.
+        """
+
+        seen_ids = set()
+
+        for server in self.list_server_objects():
+            if server.server_id is None:
+                # if server has no ID, generate one
+                server._server_id = self._generate_unique_id()
+                server.refresh(server.path)
+                continue
+            
+            # check if the ID is already seen
+            if server.server_id.lower() in seen_ids:
+                # generate a new unique ID for this server, renaming the folder accordingly
+                server._server_id = self._generate_unique_id()
+                new_path = (server.path.parent / f"{server.name}{DELIMITER}{server.server_id}").resolve()
+                server.path.rename(new_path)
+                server.refresh(new_path) # refresh sets the name and id
+            else:
+                seen_ids.add(server.server_id.lower())
+
+    # - server actions - #
 
     def create_server(self, server: str | KherimoyaServer, install_timeout: float | None = 300) -> KherimoyaServer:
         """
@@ -358,7 +482,7 @@ class ServerManager:
 
         if new_server.exists:
             raise exceptions.ServerCreationError(f"Server '{new_server.name}' already exists.")
-        elif new_server.name in self.list_servers(sole_names=True) and self.strict_names:
+        elif new_server.name in self.list_server_names() and self.strict_names:
             raise exceptions.ServerCreationError(f"Server with name '{new_server.name}' already exists, and strict_names is enabled.")
         elif new_server.name.strip() == "":
             raise exceptions.ServerCreationError("Server name cannot be empty or whitespace.")
@@ -444,63 +568,47 @@ class ServerManager:
 
         return new_server
 
-    def _generate_unique_id(self) -> str:
+    def delete_server(self, server: KherimoyaServer) -> None:
         """
-        Generate a short human-readable, hyphen-separated unique ID.
+        Deletes an existing server.
 
-        The ID is groups of 4 characters separated by hyphens e.g.:
-        - "abcd" (1 group)
-        - "abcd-ef12" (2 groups)
-        - "abcd-ef12-3456" (3 groups)
-        and so on.
+        Args:
+            server (KherimoyaServer): An existing KherimoyaServer to delete.
+
+        Example:
+            ```python
+            server = ServerManager.create_server("deleteserver")
+            ServerManager.delete_server(server)
+            ```
+        """
+        if not server.exists or not server.path.is_dir():
+            raise FileNotFoundError("Server does not exist")
         
-        Uses a base36 alphabet (0-9a-z) and generate the shortest group count
-        possible (to keep it easy to read, opposed to UUIDs which generate excessively 
-        long IDs). If the ID space for the current group count is fully occupied
-        (i.e. all possibilities are taken), we extend with an additional group.
+        shutil.rmtree(server.path)
 
-        Case is normalized to lowercase, comparisons with existing IDs are
-        case-insensitive.
+    def rename_server(self, server: KherimoyaServer, new_name: str) -> None:
         """
-        ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
-        GROUP_SIZE = 4
-        MAX_RANDOM_TRIES = 1000
+        Renames an existing server.
 
-        # collect existing IDs, lowercased and filter None entries
-        existing = [str(x).lower() for x in self.list_servers(sole_ids=True) if isinstance(x, str) and x is not None]
-        existing_set = set(existing)
+        Args:
+            server (KherimoyaServer): An existing KherimoyaServer to rename.
+            new_name (str): The new name for the server.
 
-        def _random_id(groups: int) -> str:
-            return "-".join("".join(secrets.choice(ALPHABET) for _ in range(GROUP_SIZE)) for _ in range(groups))
+        Example:
+            ```python
+            server = ServerManager.create_server("oldname")
+            ServerManager.rename_server(server, "newname")
+            ```
+        """
+        if not server.exists or not server.path.is_dir():
+            raise FileNotFoundError("Server does not exist")
+        elif new_name in self.list_server_names() and self.strict_names:
+            raise exceptions.ServerRenameError(f"Server with name '{new_name}' already exists, and strict_names is enabled.")
+        elif new_name.strip() == "":
+            raise exceptions.ServerRenameError("Server name cannot be empty or whitespace.")
+        elif "-" in new_name or ":" in new_name or "/" in new_name or "\\" in new_name or DELIMITER in new_name:
+            raise exceptions.ServerRenameError(f"Server name cannot contain '-', ':', '/', '{DELIMITER}', or '\\' characters.")
 
-        # try group counts starting at 1 and increasing if the space is exhausted
-        for groups in range(1, 10):  # sane upper bound; will fall back to uuid4 if needed
-            # pattern to detect existing IDs at this groups length (lowercase)
-            # e.g. for groups=1 -> ^[0-9a-z]{4}$ ; groups=2 -> ^[0-9a-z]{4}(?:-[0-9a-z]{4}){1}$
-            if groups == 1:
-                pattern = re.compile(rf"^[0-9a-z]{{{GROUP_SIZE}}}$")
-            else:
-                pattern = re.compile(rf"^[0-9a-z]{{{GROUP_SIZE}}}(?:-[0-9a-z]{{{GROUP_SIZE}}}){{{groups-1}}}$")
-
-            existing_of_length = sum(1 for e in existing_set if pattern.match(e))
-            space_size = len(ALPHABET) ** (GROUP_SIZE * groups)
-
-            # if space is frozen (all combos used), try next groups count
-            if existing_of_length >= space_size:
-                continue
-
-            # try to find a new ID with random tries
-            for _ in range(MAX_RANDOM_TRIES):
-                candidate = _random_id(groups)
-                if candidate not in existing_set:
-                    return candidate
-
-            # if we couldn't find a unique ID after MAX_RANDOM_TRIES (very unlikely),
-            # continue to next groups count and try again.
-
-        # as a last fallback (VERY unlikely), generate a uuid4 to be safe.
-        # this keeps compatibility with old long IDs and guarantees uniqueness.
-        while True:
-            candidate = str(uuid.uuid4())
-            if candidate.lower() not in existing_set:
-                return candidate
+        new_path = (server.path.parent / f"{new_name}{DELIMITER}{server.server_id}").resolve()
+        server.path.rename(new_path)
+        server.refresh(new_path) # refresh sets the name and id
