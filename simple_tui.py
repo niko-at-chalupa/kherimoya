@@ -2,14 +2,18 @@
 
 from pathlib import Path
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Static, DataTable, Label, Button
-from textual.containers import Vertical, Horizontal, Container, Grid
+from textual.widgets import Header, Footer, Static, DataTable, Label, Button, Input
+from textual.containers import Vertical, Horizontal, Grid
 from textual.binding import Binding
 from textual.css.query import NoMatches
+from textual.message import Message
 from typing import cast
 import sys
 
-# TODO: Fix input handling for Textual (use modals/dialogs instead of input())
+try:
+    import endstone
+except ImportError:
+    raise ImportError("Endstone module not found. Please install it with 'pip install endstone'!")
 
 PROJECT_PATH = Path(__file__).parent.resolve()
 if not Path(PROJECT_PATH / "core").is_dir():
@@ -24,6 +28,35 @@ else:
     from core.constants import DELIMITER
 
 
+class InputModal(Static):
+
+    class Submitted(Message):
+        def __init__(self, value: str, action: str):
+            super().__init__()
+            self.value = value
+            self.action = action
+
+    def __init__(self, prompt: str, action: str):
+        super().__init__(id="input_modal")
+        self.prompt = prompt
+        self.action = action
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static(self.prompt),
+            Input(id="modal_input"),
+            Horizontal(
+                Button("ok", id="ok"),
+                Button("cancel", id="cancel"),
+            ),
+        )
+
+    def on_button_pressed(self, event: Button.Pressed):
+        if event.button.id == "ok":
+            value = self.query_one("#modal_input", Input).value
+            self.post_message(self.Submitted(value, self.action))
+        self.remove()
+
 class ServerDetails(Static):
     def __init__(self):
         super().__init__("no server selected", id="server_details")
@@ -34,7 +67,6 @@ class ServerDetails(Static):
             return
         
         status = "running" if server.running else "stopped"
-        # status_style is not used in raw markdown/textual output
         
         content = f"""
         [b]name:[/b] {server.name}
@@ -54,7 +86,7 @@ class ServerList(Static):
         table = self.query_one(DataTable)
         table.cursor_type = "row"
         
-        table.add_columns("status", "name", "id", "exists") 
+        table.add_columns("status", "name", "id", "exists")
         
         cast(KherimoyaManagerApp, self.app).load_server_data()
 
@@ -70,6 +102,8 @@ class ServerList(Static):
                 status = "[bold yellow]? / missing[/]"
                 
             exists_status = "[green]yes[/]" if server.exists else "[red]no[/]"
+            
+            row_key_value = server.server_id if server.server_id else str(server.path)
             
             table.add_row(
                 status, 
@@ -90,9 +124,9 @@ class KherimoyaManagerApp(App):
         Binding("s", "start_server", "start", show=True),
         Binding("t", "stop_server", "stop", show=True),
         Binding("c", "resolve_conflicts", "fix ids", show=True),
-        Binding("n", "create_new_server", "new", show=True),  
-        Binding("d", "delete_selected_server", "delete", show=True), 
-        Binding("e", "rename_selected_server", "rename", show=True), 
+        Binding("n", "create_new_server", "new", show=True),
+        Binding("d", "delete_selected_server", "delete", show=True),
+        Binding("e", "rename_selected_server", "rename", show=True),
     ]
 
     CSS = """
@@ -107,15 +141,14 @@ class KherimoyaManagerApp(App):
         padding: 1;
         border: solid magenta;
         width: 100%;
-        /* This line forces buttons onto a single horizontal line if space allows */
-        align-horizontal: left; 
+        align-horizontal: left;
     }
     #actions > Button {
         margin-right: 1;
     }
     #status_message {
         color: yellow;
-        padding: 0 1; /* Add some padding around the status message */
+        padding: 0 1;
     }
     Container {
         height: 100%;
@@ -125,15 +158,22 @@ class KherimoyaManagerApp(App):
         grid-rows: 1fr auto;
         height: 100%;
     }
+    #input_modal {
+        border: solid cyan;
+        padding: 1;
+        width: 50%;
+        height: auto;
+        layer: modal;
+    }
     """
-    
+
     def __init__(self):
         super().__init__()
         self.server_manager = ServerManager(PROJECT_PATH)
         self.servers: list[KherimoyaServer] = []
 
     def compose(self) -> ComposeResult:
-        yield Header() 
+        yield Header()
         yield Footer()
         
         with Grid(id="main_grid"):
@@ -146,19 +186,13 @@ class KherimoyaManagerApp(App):
                     yield Button("start (s)", variant="success")
                     yield Button("stop (t)", variant="warning")
                     yield Button("refresh (r)", variant="primary")
-                    yield Button("fix ids (c)", variant="error")
-                    yield Button("new (n)", variant="success")   # <-- ADDED
-                    yield Button("delete (d)", variant="error")  # <-- ADDED
-                    yield Button("rename (e)", variant="primary") 
-
+                    #yield Button("fix ids (c)", variant="error")
+                    yield Button("new (n)", variant="success")
+                    yield Button("delete (d)", variant="error")
+                    yield Button("rename (e)", variant="primary")
 
     def on_mount(self) -> None:
-        table = self.query_one(DataTable)
-        
-        
-        
         cast(Label, self.query_one("#status_message")).update("ready.")
-
 
     def load_server_data(self):
         self.servers = self.server_manager.list_server_objects()
@@ -170,21 +204,22 @@ class KherimoyaManagerApp(App):
     def get_selected_server(self) -> KherimoyaServer | None:
         try:
             table = cast(DataTable, self.query_one(DataTable))
+            row_key_obj = table.highlighted_row_key
             
-            row_key = table.highlighted_row_key.value # type: ignore
+            # Check if there is a highlighted key object and if its value is a string
+            if row_key_obj is None or row_key_obj.value is None:
+                return None
+            
+            row_key = str(row_key_obj.value)
             
             for server in self.servers:
-                if server.server_id == row_key:
+                # only compare if the server itself has an ID
+                if server.server_id is not None and str(server.server_id) == row_key:
                     return server
-            return None
-
-        except NoMatches:
-            return None
-        except AttributeError:
+                
             return None
         except Exception:
             return None
-
 
     async def action_quit(self):
         self.exit()
@@ -192,13 +227,11 @@ class KherimoyaManagerApp(App):
     def _resolve_conflicts_silent(self):
         try:
             self.server_manager.resolve_id_conflicts()
-        except Exception as e:
+        except Exception:
             pass
-
 
     def action_refresh_data(self):
         self._resolve_conflicts_silent()
-
         self.load_server_data()
         cast(Label, self.query_one("#status_message")).update("server list refreshed.")
 
@@ -206,10 +239,9 @@ class KherimoyaManagerApp(App):
         try:
             self.server_manager.resolve_id_conflicts()
             self.action_refresh_data()
-            cast(Label, self.query_one("#status_message")).update("id conflicts resolved. please refresh again if needed.")
+            cast(Label, self.query_one("#status_message")).update("id conflicts resolved. refresh again if needed.")
         except Exception as e:
             cast(Label, self.query_one("#status_message")).update(f"error resolving conflicts: {type(e).__name__}")
-
 
     def action_start_server(self):
         server = self.get_selected_server()
@@ -220,10 +252,8 @@ class KherimoyaManagerApp(App):
         cast(Label, self.query_one("#status_message")).update(f"attempting to start server: {server.name}...")
         
         try:
-            # NOTE: Logic for starting server is missing in KherimoyaServer.Actions._stop_through_tmux, but we call the placeholder action anyway
-            server.actions.start_server(method="tmux") 
-            cast(Label, self.query_one("#status_message")).update(f"server {server.name} start command sent (check tmux manually).")
-
+            server.actions.start_server(method="tmux")
+            cast(Label, self.query_one("#status_message")).update(f"server {server.name} start command sent.")
         except Exception as e:
             cast(Label, self.query_one("#status_message")).update(f"error starting server: {type(e).__name__}")
 
@@ -236,76 +266,73 @@ class KherimoyaManagerApp(App):
         cast(Label, self.query_one("#status_message")).update(f"attempting to stop server: {server.name}...")
         
         try:
-            # NOTE: Logic for stopping server is missing in server.actions.stop_server(method="tmux"), add later
             cast(Label, self.query_one("#status_message")).update(f"server {server.name} stop command sent.")
         except Exception as e:
             cast(Label, self.query_one("#status_message")).update(f"error stopping server: {type(e).__name__}")
 
-    def action_create_new_server(self):
-        # NOTE: Using standard input() pauses the TUI until input is provided. A better Textual app would use a Modal or dialog, implement later.
-        new_name = input("enter new server name: ")
-        new_name = new_name.strip()
+    async def action_create_new_server(self):
+        await self.mount(InputModal("enter new server name:", "create"))
 
-        if not new_name:
-            cast(Label, self.query_one("#status_message")).update("creation cancelled: name cannot be empty.")
-            return
-
-        cast(Label, self.query_one("#status_message")).update(f"attempting to create server: {new_name} (this may take a moment)...")
-
-        try:
-            self.server_manager.create_server(new_name)
-            self.action_refresh_data()
-            cast(Label, self.query_one("#status_message")).update(f"server '{new_name}' created successfully.")
-        except Exception as e:
-            cast(Label, self.query_one("#status_message")).update(f"error creating server: {type(e).__name__}")
-
-
-    def action_delete_selected_server(self):
+    async def action_delete_selected_server(self):
         server = self.get_selected_server()
         if not server:
             cast(Label, self.query_one("#status_message")).update("select a server to delete.")
             return
         
-        # NOTE: Using standard input() pauses the TUI until input is provided. A better Textual app would use a Modal or dialog, implement later.
-        confirm = input(f"type 'yes' to confirm permanent deletion of '{server.name}': ")
+        await self.mount(InputModal(f"type 'yes' to delete '{server.name}':", "delete"))
 
-        if confirm.lower() != 'yes':
-            cast(Label, self.query_one("#status_message")).update("deletion cancelled.")
-            return
-
-        cast(Label, self.query_one("#status_message")).update(f"attempting to delete server: {server.name}...")
-
-        try:
-            self.server_manager.delete_server(server)
-            self.action_refresh_data()
-            cast(Label, self.query_one("#status_message")).update(f"server '{server.name}' deleted.")
-        except Exception as e:
-            cast(Label, self.query_one("#status_message")).update(f"error deleting server: {type(e).__name__}")
-
-
-    def action_rename_selected_server(self):
+    async def action_rename_selected_server(self):
         server = self.get_selected_server()
         if not server:
             cast(Label, self.query_one("#status_message")).update("select a server to rename.")
             return
+        
+        await self.mount(InputModal(f"enter new name for '{server.name}':", "rename"))
 
-        # NOTE: Using standard input() pauses the TUI until input is provided. A better Textual app would use a Modal or dialog, implement later.
-        new_name = input(f"enter new name for '{server.name}': ")
-        new_name = new_name.strip()
+    async def on_input_modal_submitted(self, message: InputModal.Submitted):
+        value = message.value.strip()
+        action = message.action
 
-        if not new_name:
-            cast(Label, self.query_one("#status_message")).update("rename cancelled: name cannot be empty.")
-            return
+        if action == "create":
+            if not value:
+                self.query_one("#status_message").update("creation cancelled: name cannot be empty.")
+                return
+            try:
+                self.server_manager.create_server(value)
+                self.action_refresh_data()
+                self.query_one("#status_message").update(f"server '{value}' created.")
+            except Exception as e:
+                self.query_one("#status_message").update(f"error creating server: {type(e).__name__}")
 
-        cast(Label, self.query_one("#status_message")).update(f"attempting to rename server '{server.name}' to '{new_name}'...")
+        elif action == "delete":
+            server = self.get_selected_server()
+            if not server:
+                self.query_one("#status_message").update("select a server first.")
+                return
+            if value.lower() != "yes":
+                self.query_one("#status_message").update("deletion cancelled.")
+                return
+            try:
+                self.server_manager.delete_server(server)
+                self.action_refresh_data()
+                self.query_one("#status_message").update(f"server '{server.name}' deleted.")
+            except Exception as e:
+                self.query_one("#status_message").update(f"error deleting server: {type(e).__name__}")
 
-        try:
-            self.server_manager.rename_server(server, new_name)
-            self.action_refresh_data()
-            cast(Label, self.query_one("#status_message")).update(f"server renamed to '{new_name}'.")
-        except Exception as e:
-            cast(Label, self.query_one("#status_message")).update(f"error renaming server: {type(e).__name__}")
-
+        elif action == "rename":
+            server = self.get_selected_server()
+            if not server:
+                self.query_one("#status_message").update("select a server first.")
+                return
+            if not value:
+                self.query_one("#status_message").update("rename cancelled: empty name.")
+                return
+            try:
+                self.server_manager.rename_server(server, value)
+                self.action_refresh_data()
+                self.query_one("#status_message").update(f"server renamed to '{value}'.")
+            except Exception as e:
+                self.query_one("#status_message").update(f"error renaming server: {type(e).__name__}")
 
     def on_data_table_row_highlighted(self, event):
         server = self.get_selected_server()
@@ -326,6 +353,7 @@ class KherimoyaManagerApp(App):
             self.action_delete_selected_server()
         elif event.button.label == "rename (e)":
             self.action_rename_selected_server()
+
 
 if __name__ == "__main__":
     app = KherimoyaManagerApp()

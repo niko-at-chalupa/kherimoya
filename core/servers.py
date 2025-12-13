@@ -6,11 +6,12 @@ from . import exceptions
 import uuid
 import json
 import libtmux
-import endstone # to ensure endstone is installed
+import endstone # unused, only here to ensure endstone is installed
 from typing import Literal, cast
 import re
 import secrets
 import time
+import sys
 
 PROJECT_PATH = Path(__file__).parent.parent.resolve()
 if not Path(PROJECT_PATH / "core").is_dir():
@@ -26,7 +27,7 @@ class KherimoyaServer:
     """
     # --- initialization --- #
 
-    class Actions:
+    class _Actions:
         """
         Methods which require the server to exist. This only checks KherimoyaServer.exists, which means if it was nonexisting in the past you have to call KherimoyaServer.refresh
         """
@@ -59,27 +60,39 @@ class KherimoyaServer:
                 raise ValueError(f"Invalid start method: {method}")
         
         def _start_through_tmux(self, server):
-            # TODO: Make it so that it uses similar logic to our old scripts, where we used screen -dmS "$SERVER_NAME" endstone -y -s "$SERVER_DIR_PATH" to start servers
             session_name = f'{server.name}{DELIMITER}{server.server_id}'
             tmux_server = None
             session = None
 
-            try: # start session
+            base_path = server.path.resolve()
+
+            try:  # start session
                 tmux_server = libtmux.Server()
+                
+                # kill any existing session with the same name
                 try:
                     existing = tmux_server.find_where({"session_name": session_name})
                     if existing:
                         existing.kill_session()
-                except Exception as e:
+                except Exception:
                     pass
 
-                session = tmux_server.new_session(session_name=session_name, start_directory=str(server.path / "server"), attach=False, kill_session=True)
-                window = session.attached_window or session.windows[0]
-                pane = window.attached_pane or window.panes[0]
-                pane.send_keys(f'endstone -y -s {str(server.path / "server")}', enter=True)
-            except Exception as e:
-                raise exceptions.ServerStartError(f"Failed to create tmux session for server {session_name}") from e
+                # create new session
+                session = tmux_server.new_session(
+                    session_name=session_name,
+                    start_directory=str(base_path / "server"),
+                    attach=False,
+                    kill_session=True
+                )
 
+                window = session.windows[0]
+                pane = window.panes[0]
+
+                # run the server start command
+                pane.send_keys(f'{sys.executable} -m endstone -y -s {str(base_path / "server")}; echo __FINISHED__', enter=True)
+            except Exception as e:
+                raise exceptions.ServerStartError(f"Failed to start tmux session for server {session_name}") from e
+        
         def _start_through_plugin(self, server):
             # TODO: When the plugin is finished, make it use the port for the server.
             # Example URI: {ip}:{port}/{name}{DELIMITER}{id}/start_server
@@ -105,13 +118,33 @@ class KherimoyaServer:
                 raise ValueError(f"Invalid stop method: {method}")
 
         def _stop_through_tmux(self, server):
-            # TODO: Make it so that it essentially just sends the command "stop" to the server. Do this last because we can do this manually
+            session_name = f'{server.name}{DELIMITER}{server.server_id}'
+            
+            try:
+                tmux_server = libtmux.Server()
+                session = tmux_server.find_where({"session_name": session_name})
+                
+                if session:
+                    window = session.windows[0]
+                    pane = window.panes[0]
+                    
+                    pane.send_keys("stop", enter=True)
+                else:
+                    pass
+            except Exception as e:
+                raise exceptions.ServerStopError(f"Failed to send stop command to tmux session for server {session_name}") from e
             pass
 
         def _stop_through_plugin(self, server):
             # TODO: When the plugin is finished, make it use the port for the server to stop the server.
             # Example URI: {ip}:{port}/{name}{DELIMITER}{id}/stop_server
             pass
+
+    def __repr__(self) -> str:
+        return (
+            f"<KherimoyaServer {self.name!r}{DELIMITER}{self.server_id!r}"
+            f"exists={self.exists!r} running={self.running!r} path={self.path!r}>"
+        )
 
     def __init__(self, project_path: Path, name: str, server_id: str | None = None):
         self._project_path = project_path
@@ -138,7 +171,7 @@ class KherimoyaServer:
             self._running = False
 
         # Attach Actions interface
-        self._actions = KherimoyaServer.Actions(self)
+        self._actions = KherimoyaServer._Actions(self)
     
     # --- properties --- #
 
@@ -292,25 +325,25 @@ class ServerManager:
             ```
         """
 
+        servers_dir = self.project_path / "servers"
+        if not servers_dir.is_dir():
+            return []  # no servers yet
         servers = []
-        for p in (self.project_path / "servers").iterdir():
+        for p in servers_dir.iterdir():
             if not p.is_dir():
                 continue
-
             if DELIMITER in p.name:
                 name, server_id = p.name.split(DELIMITER, 1)
             else:
-                name, server_id = p.name, None
-
+                continue  # Folders without DELIMITER are NOT considered servers
             if sole_names:
                 servers.append(name)
             elif sole_ids:
                 servers.append(server_id)
             else:
                 servers.append((name, server_id))
-
         return servers
-
+    
     def list_server_ids(self) -> list[str | None]:
         """
         Lists all of the server IDs in the servers/ directory.
@@ -366,7 +399,7 @@ class ServerManager:
 
     def _generate_unique_id(self) -> str:
         """
-        Generate a short human-readable, hyphen-separated unique ID.
+        Generate a short human-readable, hyphen-separated unique ID
 
         The ID is groups of 4 characters separated by hyphens e.g.:
         - "abcd" (1 group)
@@ -425,20 +458,18 @@ class ServerManager:
             if candidate.lower() not in existing_set:
                 return candidate
 
-    def resolve_id_conflicts(self) -> None:
+    def resolve_id_conflicts(self) -> bool:
         """
         Resolves possible ID conflicts among existing servers by checking each one for conflicts, then generating a new unique ID for certain servers if needed.
+
+        Returns:
+            bool: True if any conflicts were found and resolved, False otherwise.
         """
 
+        conflicts_found = False
         seen_ids = set()
 
-        for server in self.list_server_objects():
-            if server.server_id is None:
-                # if server has no ID, generate one
-                server._server_id = self._generate_unique_id()
-                server.refresh(server.path)
-                continue
-            
+        for server in self.list_server_objects():            
             # check if the ID is already seen
             if server.server_id.lower() in seen_ids:
                 # generate a new unique ID for this server, renaming the folder accordingly
@@ -446,8 +477,11 @@ class ServerManager:
                 new_path = (server.path.parent / f"{server.name}{DELIMITER}{server.server_id}").resolve()
                 server.path.rename(new_path)
                 server.refresh(new_path) # refresh sets the name and id
+                conflicts_found = True
             else:
                 seen_ids.add(server.server_id.lower())
+            
+        return conflicts_found
 
     # - server actions - #
 
@@ -497,7 +531,7 @@ class ServerManager:
 
         # - make the filestructure - #
         for subdir in ["config", "extra", "server", "state"]:
-            (base_path / subdir).mkdir()
+            (base_path / subdir).resolve().mkdir()
 
         new_server.refresh(base_path) # sets all attributes and writes to server.json
 
@@ -506,26 +540,50 @@ class ServerManager:
         tmux_server = None
         session = None
 
-        try: # start session
+        try:  # start session
             tmux_server = libtmux.Server()
+            
+            # kill any existing session with the same name
             try:
                 existing = tmux_server.find_where({"session_name": session_name})
                 if existing:
                     existing.kill_session()
-            except Exception as e:
+            except Exception:
                 pass
 
-            session = tmux_server.new_session(session_name=session_name, start_directory=str(base_path / "servers"), attach=False, kill_session=True)
-            window = session.attached_window or session.windows[0]
-            pane = window.attached_pane or window.panes[0]
-            pane.send_keys(f'endstone -y -s {str(Path(base_path / "server"))}', enter=True)
+            # create new session
+            session = tmux_server.new_session(
+                session_name=session_name,
+                start_directory=str(base_path / "server"),
+                kill_session=True
+            )
+
+            # use the first window and pane (attached_window/attached_pane removed)
+            window = session.windows[0]
+            pane = window.panes[0]
+
+            # run the server start command
+            pane.send_keys(f'{sys.executable} -m endstone -y -s {str(base_path / "server")} ; echo __FINISHED__; exit', enter=True)
+
         except Exception as e:
+            # delete base_path
+            try:
+                if base_path.exists() and base_path.is_dir():
+                    for sub in base_path.iterdir():
+                        if sub.is_dir():
+                            for subsub in sub.iterdir():
+                                subsub.unlink()
+                            sub.rmdir()
+                    base_path.rmdir()
+            except Exception:
+                pass
             raise exceptions.ServerCreationError(f"Failed to create tmux session for server {session_name}") from e
+
 
         # when endstone is ran in an environment which does not have a endstone BDS installed, it will create the server and start it
         start_time = time.monotonic()
         sleep_interval = 0.5
-        while not Path(base_path / "server" / "worlds").is_dir():
+        while not Path(base_path / "server" / "worlds").is_dir(): # wait until server is installed
             if install_timeout is not None and (time.monotonic() - start_time) > install_timeout:
                 # best-effort cleanup: kill tmux session, then raise
                 try:
@@ -535,32 +593,38 @@ class ServerManager:
                             s.kill_session()
                 except Exception:
                     pass
+                # delete base_path
+                try:
+                    if base_path.exists() and base_path.is_dir():
+                        for sub in base_path.iterdir():
+                            if sub.is_dir():
+                                for subsub in sub.iterdir():
+                                    subsub.unlink()
+                                sub.rmdir()
+                        base_path.rmdir()
+                except Exception:
+                    pass
                 raise TimeoutError(f"Server installation/start did not complete within {install_timeout} seconds.")
+            
+            output = "\n".join(pane.capture_pane()[-20:])  # last 20 lines only
+            if "__ENDSTONE_DONE__" in output:
+                raise exceptions.ServerCreationError(f"Endstone process exited unexpectedly during server creation for server {session_name}; output:\n{output}")
+                
             time.sleep(sleep_interval)
             sleep_interval = min(2.0, sleep_interval * 1.5)
 
         time.sleep(1)
 
         # send stop command, which should gracefully stop the server
-        stopped = False
-        try:
-            if tmux_server:
-                sess = tmux_server.find_where({"session_name": session_name})
-                if sess:
-                    win = sess.attached_window or sess.windows[0]
-                    pane = win.attached_pane or win.panes[0]
-                    pane.send_keys("stop", enter=True)
-                    time.sleep(1)
-                    try:
-                        sess.kill_session()
-                    except Exception:
-                        pass
-                    stopped = True
-        except Exception:
-            stopped = False
+        pane.send_keys("stop", enter=True)
+        stop_start = time.monotonic()
 
-        if not stopped:
-            raise exceptions.ServerCreationError(f"failed to stop tmux session for server {session_name}")
+        while True:
+            if not tmux_server.has_session(session_name):  # session gone
+                break
+            if time.monotonic() - stop_start > 60: # good enough timeout
+                break
+            time.sleep(0.5)
 
         # - finishing up - #
         with open(base_path / "state" / "state.json", "w", encoding="utf-8") as f:

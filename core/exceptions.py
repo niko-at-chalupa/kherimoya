@@ -18,3 +18,6 @@ class ServerStartError(Exception):
 
 class ServerRenameError(Exception):
     """Raised when a server could not be renamed"""
+
+class InvalidParameterError(Exception):
+    """Raised when an invalid parameter is provided to a method"""
