@@ -66,8 +66,44 @@ pip install -r requirements.txt
 </details>
 
 ## usage
+
+> [!NOTE]
+> `simple_tui.py` does not work!
+
+Run `cli.py` to use Kherimoya's built-in CLI, or make your own interface *(documentation soon)*
+
+```bash
+python cli.py help
+```
+
+Make sure you're in the correct Python environment, and you're inside Kherimoya's project directory!
+
+You may need to exchange `python` with `python3`, depending on your system
+### examples
+>To **create** a server:
+>```bash
+>python cli.py create --name server 
+>```
+>or
+>```bash
+>python cli.py
+>kherimoya> create --name server
+>```
+
+>To **start** a server:
+>```bash
+>python cli.py start --server_id 1234
+>```
+>or
+>```bash
+>python cli.py
+>kherimoya> start --server_id 1234
+>```
+<!-- simple_tui does NOT work!
+
 Run `simple_tui.py` to use Kherimoya's built-in UI, or make your own interface *(documenation soon)*
 
 ```bash
 python3 simple_tui.py # Make sure you're in the correct Python environment, and you're inside Kherimoya's project directory
 ```
+-->

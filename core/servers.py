@@ -12,6 +12,7 @@ import re
 import secrets
 import time
 import sys
+import logging
 
 PROJECT_PATH = Path(__file__).parent.parent.resolve()
 if not Path(PROJECT_PATH / "core").is_dir():
@@ -89,7 +90,7 @@ class KherimoyaServer:
                 pane = window.panes[0]
 
                 # run the server start command
-                pane.send_keys(f'{sys.executable} -m endstone -y -s {str(base_path / "server")}; echo __FINISHED__', enter=True)
+                pane.send_keys(f'{sys.executable} -m endstone -y -s {str(base_path / "server")}; echo __FINISHED__; exit', enter=True)
             except Exception as e:
                 raise exceptions.ServerStartError(f"Failed to start tmux session for server {session_name}") from e
         
@@ -274,9 +275,12 @@ class ServerManager:
 
     # --- initialization --- #
 
-    def __init__(self, project_path: Path, strict_names: bool = True):
+    def __init__(self, project_path: Path, strict_names: bool = True, log_level: int = logging.INFO):
         self._project_path = project_path
         self._strict_names = strict_names
+        self.logger = logging.getLogger(__name__)
+    
+        self.set_log_level(log_level)
 
     @property
     def project_path(self) -> Path:
@@ -293,6 +297,20 @@ class ServerManager:
         return self._strict_names
 
     # --- methods --- #
+
+    def set_log_level(self, level: int) -> None:
+        self.logger.setLevel(level)
+
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setLevel(level)
+
+            formatter = logging.Formatter(
+                "[%(levelname)s] %(name)s: %(message)s"
+            )
+            handler.setFormatter(formatter)
+
+            self.logger.addHandler(handler)
 
     def _list_servers(self, sole_names: bool = False, sole_ids: bool = False) -> list[tuple[str, str]] | list[str | None]:
         """
@@ -330,9 +348,11 @@ class ServerManager:
             return []  # no servers yet
         servers = []
         for p in servers_dir.iterdir():
+            self.logger.debug(f"Checking path in servers/: {p}")
             if not p.is_dir():
                 continue
             if DELIMITER in p.name:
+                self.logger.debug(f"Found non-server folder in servers/: {p.name}. Avoid making servers without a {DELIMITER} in its name, and avoid putting non-server folders in servers/.")
                 name, server_id = p.name.split(DELIMITER, 1)
             else:
                 continue  # Folders without DELIMITER are NOT considered servers
@@ -342,6 +362,7 @@ class ServerManager:
                 servers.append(server_id)
             else:
                 servers.append((name, server_id))
+                self.logger.debug(f"Found server: {name}{DELIMITER}{server_id}")
         return servers
     
     def list_server_ids(self) -> list[str | None]:
@@ -394,10 +415,12 @@ class ServerManager:
         all_servers = self.list_server_objects()
         for server in all_servers:
             if server.server_id and server.server_id.lower() == server_id.lower():
+                self.logger.info(f"Found server: {server.name}{DELIMITER}{server.server_id}")
                 return server
+        self.logger.info(f"Failed to find a server with ID: {server_id}")
         return None
 
-    def _generate_unique_id(self) -> str:
+    def _generate_unique_id(self, max_random_tries: int = 1000) -> str:
         """
         Generate a short human-readable, hyphen-separated unique ID
 
@@ -417,7 +440,7 @@ class ServerManager:
         """
         ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
         GROUP_SIZE = 4
-        MAX_RANDOM_TRIES = 1000
+        MAX_RANDOM_TRIES = max_random_tries
 
         # collect existing IDs, lowercased and filter None entries
         existing = [str(x).lower() for x in self.list_server_ids() if isinstance(x, str) and x is not None]
@@ -428,6 +451,7 @@ class ServerManager:
 
         # try group counts starting at 1 and increasing if the space is exhausted
         for groups in range(1, 10):  # sane upper bound; will fall back to uuid4 if needed
+            self.logger.debug(f"Trying to generate unique ID with {groups} groups")
             # pattern to detect existing IDs at this groups length (lowercase)
             # e.g. for groups=1 -> ^[0-9a-z]{4}$ ; groups=2 -> ^[0-9a-z]{4}(?:-[0-9a-z]{4}){1}$
             if groups == 1:
@@ -446,6 +470,7 @@ class ServerManager:
             for _ in range(MAX_RANDOM_TRIES):
                 candidate = _random_id(groups)
                 if candidate not in existing_set:
+                    self.logger.info(f"Generated unique ID: {candidate}")
                     return candidate
 
             # if we couldn't find a unique ID after MAX_RANDOM_TRIES (very unlikely),
@@ -456,6 +481,7 @@ class ServerManager:
         while True:
             candidate = str(uuid.uuid4())
             if candidate.lower() not in existing_set:
+                self.logger.info(f"Generated fallback UUID: {candidate}")
                 return candidate
 
     def resolve_id_conflicts(self) -> bool:
@@ -525,12 +551,15 @@ class ServerManager:
 
         # - set up the server - #
         new_server._server_id = str(self._generate_unique_id())
+        self.logger.info(f"Generated server ID: {new_server.server_id}")
 
         base_path = (self.project_path / "servers" / f"{new_server.name}{DELIMITER}{new_server.server_id}").resolve()
+        self.logger.debug(f"Creating server directory at: {base_path}")
         base_path.mkdir(parents=False, exist_ok=False)
 
         # - make the filestructure - #
         for subdir in ["config", "extra", "server", "state"]:
+            self.logger.debug(f"Creating subdirectory: {subdir}")
             (base_path / subdir).resolve().mkdir()
 
         new_server.refresh(base_path) # sets all attributes and writes to server.json
@@ -539,6 +568,8 @@ class ServerManager:
         session_name = f'{new_server.name}{DELIMITER}{new_server.server_id}'
         tmux_server = None
         session = None
+
+        self.logger.info(f"Starting Endstone to set up server in tmux session: {session_name}")
 
         try:  # start session
             tmux_server = libtmux.Server()
@@ -567,6 +598,7 @@ class ServerManager:
 
         except Exception as e:
             # delete base_path
+            self.logger.error(f"Failed to create tmux session for server {session_name}, cleaning up created files.")
             try:
                 if base_path.exists() and base_path.is_dir():
                     for sub in base_path.iterdir():
@@ -594,6 +626,7 @@ class ServerManager:
                 except Exception:
                     pass
                 # delete base_path
+                self.logger.error(f"Server installation/start timed out for server {session_name}, cleaning up created files.")
                 try:
                     if base_path.exists() and base_path.is_dir():
                         for sub in base_path.iterdir():
@@ -607,7 +640,7 @@ class ServerManager:
                 raise TimeoutError(f"Server installation/start did not complete within {install_timeout} seconds.")
             
             output = "\n".join(pane.capture_pane()[-20:])  # last 20 lines only
-            if "__ENDSTONE_DONE__" in output:
+            if "__ENDSTONE_DONE__" in output or session not in tmux_server.sessions:
                 raise exceptions.ServerCreationError(f"Endstone process exited unexpectedly during server creation for server {session_name}; output:\n{output}")
                 
             time.sleep(sleep_interval)
@@ -618,6 +651,7 @@ class ServerManager:
         # send stop command, which should gracefully stop the server
         pane.send_keys("stop", enter=True)
         stop_start = time.monotonic()
+        self.logger.info(f"Sent stop command to server {session_name}, waiting for tmux session to close.")
 
         while True:
             if not tmux_server.has_session(session_name):  # session gone
@@ -629,6 +663,8 @@ class ServerManager:
         # - finishing up - #
         with open(base_path / "state" / "state.json", "w", encoding="utf-8") as f:
             json.dump({"running": False}, f, indent=4) 
+
+        self.logger.info(f"Successfully created server: {new_server.name}{DELIMITER}{new_server.server_id}")
 
         return new_server
 

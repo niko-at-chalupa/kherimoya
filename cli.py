@@ -21,6 +21,7 @@ import rich
 from rich.console import Console; console = Console()
 from rich.markdown import Markdown
 import textwrap
+import logging
 
 from core import exceptions
 from core.servers import ServerManager, KherimoyaServer
@@ -52,9 +53,9 @@ def _get_server_by_id(server_manager, server_id) -> KherimoyaServer:
     return server
 
 class Commands:
-    def __init__(self):
-        self.server_manager = ServerManager(PROJECT_PATH)
-    
+    def __init__(self, server_manager: ServerManager):
+        self.server_manager = server_manager
+
     def list_servers(self, args):
         """
         Lists all servers, with their names and IDs
@@ -204,7 +205,8 @@ class Commands:
             for command in command_map:
                 console.print(f"- {command}")
 
-commands = Commands()
+server_manager = ServerManager(PROJECT_PATH)
+commands = Commands(server_manager)
 command_map = {
     "list": commands.list_servers,
     "create": commands.create_server,
@@ -238,14 +240,17 @@ if __name__ == "__main__":
                     break
                 try:
                     args = user_input.split()
-                    parser = argparse.ArgumentParser(description="Kherimoya CLI")
+                    parser = argparse.ArgumentParser(description="Kherimoya CLI", exit_on_error=False)
                     parser.add_argument("command", type=str, help="Command to execute")
                     parser.add_argument("--name", type=str, help="Name of the server")
                     parser.add_argument("--server-id", type=str, help="ID of the server")
+                    parser.add_argument("--log-level", type=int, help="Log level for ServerManager", default=logging.INFO)
+                    parsed_args = parser.parse_args(args)
                 except Exception as e:
                     console.print_exception(show_locals=False, word_wrap=True)
                     continue
-                parsed_args = parser.parse_args(args)
+                if parsed_args.log_level:
+                    commands.server_manager.logger.setLevel(parsed_args.log_level)
                 run_command(parsed_args)
         except (KeyboardInterrupt, EOFError):
             print("\nExiting Kherimoya CLI. Goodbye!")
