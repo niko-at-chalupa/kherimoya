@@ -5,5 +5,5 @@ venvKherimoya/
 __pycache__/
 venv/
 .pythonrc.py
-.vscode/
+.vscode
 user/*
