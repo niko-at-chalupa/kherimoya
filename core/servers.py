@@ -6,13 +6,20 @@ from . import exceptions
 import uuid
 import json
 import libtmux
-import endstone # unused, only here to ensure endstone is installed
 from typing import Literal, cast
 import re
 import secrets
 import time
 import sys
 import logging
+import platform
+
+try:
+    import endstone # unused, only here to ensure endstone is installed #type: ignore
+except ImportError as e:
+    if platform.machine() in ["arm64", "aarch64"]:
+        pass
+    raise e
 
 PROJECT_PATH = Path(__file__).parent.parent.resolve()
 if not Path(PROJECT_PATH / "core").is_dir():
@@ -207,7 +214,7 @@ class KherimoyaServer:
         return self._running
 
     @property
-    def actions(self) -> "KherimoyaServer.Actions":
+    def actions(self) -> "KherimoyaServer._Actions":
         return self._actions
 
     # --- methods --- #

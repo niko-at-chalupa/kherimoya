@@ -6,7 +6,7 @@
 # Kherimoya - Minecraft Bedrock Server Management Through [Endstone](https://github.com/EndstoneMC/endstone)
 </div>
 
-> [!WARNING]
+> [!NOTE]
 > Kherimoya is still in its **early development stages**, which means that it's not in the best state right now. I wouldn't recommend Kherimoya yet as it doesn't offer enough features.
 
 ## introduction
@@ -15,15 +15,21 @@ Kherimoya is a Minecraft Bedrock server management tool which uses [Endstone](ht
 In the future, Kherimoya will soon provide WAY more features in the form of Kherimoya+, an extension that adds on to Kherimoya with way more features, seperated from Kherimoya to keep it lightweight.
 
 ## features
+<ul>
+  <li>Basic server management
+  <li>Python backend which makes it easy to script
+  <li>Fully portable servers
+  <li>Easy setup with scripts
+</ul>
 
 ## planned features
 The following features <strong>WILL</strong> be included in Kherimoya in the future.
 <ul>
     <li>Documentation
     <li>Kherimoya endstone plugin, that can do things like tell the status of the server and communicate with Kherimoya
-    <li><s>More features like server status, discord bot, etc... (discord bot may just become extension)</s> <i>(Features like this will be a part of Kherimoya+.)</i>
     <li>Automatic server backups
     <li>Extensions
+    <li>aarch64 support
 </ul>
 The following features <strong>MAY</strong> be includeded in Kherimoya in the future
 <ul>
@@ -43,11 +49,29 @@ Kherimoya **will** be mostly just a backend for server management. This means yo
 
 - python (3.9+)
 
-- git
+- git (if manual install)
 
 - tmux
+
+Quickly install of of these on Ubuntu by running this shell command:
+```bash
+sudo apt install python git tmux
+```
 </details>
 
+<details>
+
+Download the latest .zip from [releases](https://github.com/niko-at-chalupa/kherimoya/releases/)
+
+> **On x86_64 architectures** *(likely)*
+> Run setup.sh within scripts/setup/
+> ```bash
+>./scripts/setup/setup.sh
+
+> [!NOTE]
+> Support for ARM architectures is **under development**, and setup_arm.sh doesn't work as of now.
+
+<summary> Manual setup
 1. Clone the repository & CD into it
 
 ```bash
@@ -63,6 +87,8 @@ python -m venv venv && source venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
+</details>
+
 </details>
 
 ## usage

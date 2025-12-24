@@ -7,3 +7,4 @@ venv/
 .pythonrc.py
 .vscode
 user/*
+x64_env/
