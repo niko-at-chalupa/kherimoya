@@ -3,7 +3,10 @@ name: Auto Release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.0'   # major/minor releases
+      - 'v[0-9]+.[0-9]+.0'
+
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -19,15 +22,6 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          name: ${{ github.ref }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload zip to release
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./kherimoya.zip
-          asset_name: Kherimoya.zip
-          asset_content_type: application/zip
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          files: kherimoya.zip

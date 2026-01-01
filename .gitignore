@@ -8,3 +8,4 @@ venv/
 .vscode
 user/*
 x64_env/
+**.DS_Store
