@@ -6,7 +6,7 @@
 # Kherimoya - Minecraft Bedrock Server Management Through [Endstone](https://github.com/EndstoneMC/endstone)
 </div>
 
-> [!NOTE]
+> [!IMPORTANT]
 > Kherimoya is still in its **early development stages**, which means that it's not in the best state right now. I wouldn't recommend Kherimoya yet as it doesn't offer enough features.
 
 ## introduction
@@ -53,13 +53,11 @@ Kherimoya **will** be mostly just a backend for server management. This means yo
 
 - tmux
 
-Quickly install of of these on Ubuntu by running this shell command:
-```bash
-sudo apt install python git tmux
-```
+>Quickly install of of these on Ubuntu by running this shell command:
+> ```bash
+> sudo apt install python git tmux
+> ```
 </details>
-
-<details>
 
 Download the latest .zip from [releases](https://github.com/niko-at-chalupa/kherimoya/releases/)
 
@@ -71,7 +69,10 @@ Download the latest .zip from [releases](https://github.com/niko-at-chalupa/kher
 > [!NOTE]
 > Support for ARM architectures is **under development**, and setup_arm.sh doesn't work as of now.
 
-<summary> Manual setup
+<br />
+
+<details>
+<summary> Manual setup </summary>
 1. Clone the repository & CD into it
 
 ```bash
@@ -93,7 +94,7 @@ pip install -r requirements.txt
 
 ## usage
 
-> [!NOTE]
+> [!WARNING]
 > `simple_tui.py` does not work!
 
 Run `cli.py` to use Kherimoya's built-in CLI, or make your own interface *(documentation soon)*

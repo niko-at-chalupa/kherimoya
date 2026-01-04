@@ -519,44 +519,14 @@ class ServerManager:
 
     # - server actions - #
 
-    def create_server(self, server: str | KherimoyaServer, install_timeout: float | None = 300) -> KherimoyaServer:
+    def _create_server_with_python(self, server: KherimoyaServer, install_timeout: float | None = 300) -> None:
         """
-        Creates a new server from a string for the name, or a nonexisting KherimoyaServer
+        Creates a new server using the Python method (endstone).
 
         Args:
-            server (str | KherimoyaServer): A name for the server, or a nonexisting KherimoyaServer
-            install_timeout (float | None = 300): Maximum seconds to wait for endstone to finish initial install/start.
-                If None, wait indefinitely.
-
-        Returns:
-            KherimoyaServer: The new, existing server.
-
-        Example:
-            ```
-            # Create a server from a name
-            server1 = ServerManager.create_server(Path("path/to/your/kherimoya/installation"), "newserver1")
-
-            # Create a server from a nonexisting KherimoyaServer
-            server2 = KherimoyaServer(PROJECT_PATH, "newserver2")
-            server2 = ServerManager.create_server(server2)
-            ```
+            server (KherimoyaServer): The KherimoyaServer to create.
         """
-        if isinstance(server, KherimoyaServer):
-            if server.exists:
-                raise FileExistsError("Server already exists")
-            new_server = server
-        else:
-            new_server = KherimoyaServer(self.project_path, server)
-
-        if new_server.exists:
-            raise exceptions.ServerCreationError(f"Server '{new_server.name}' already exists.")
-        elif new_server.name in self.list_server_names() and self.strict_names:
-            raise exceptions.ServerCreationError(f"Server with name '{new_server.name}' already exists, and strict_names is enabled.")
-        elif new_server.name.strip() == "":
-            raise exceptions.ServerCreationError("Server name cannot be empty or whitespace.")
-        elif "-" in new_server.name or ":" in new_server.name or "/" in new_server.name or "\\" in new_server.name or DELIMITER in new_server.name:
-            raise exceptions.ServerCreationError(f"Server name cannot contain '-', ':', '/', '{DELIMITER}', or '\\' characters.")
-
+        new_server = server
         # - set up the server - #
         new_server._server_id = str(self._generate_unique_id())
         self.logger.info(f"Generated server ID: {new_server.server_id}")
@@ -675,6 +645,47 @@ class ServerManager:
         self.logger.info(f"Successfully created server: {new_server.name}{DELIMITER}{new_server.server_id}")
 
         return new_server
+
+
+    def create_server(self, server: str | KherimoyaServer, install_timeout: float | None = 300, method: Literal["python", "docker"]) -> KherimoyaServer:
+        """
+        Creates a new server from a string for the name, or a nonexisting KherimoyaServer
+
+        Args:
+            server (str | KherimoyaServer): A name for the server, or a nonexisting KherimoyaServer
+            install_timeout (float | None = 300): Maximum seconds to wait for endstone to finish initial install/start.
+                If None, wait indefinitely.
+
+        Returns:
+            KherimoyaServer: The new, existing server.
+
+        Example:
+            ```
+            # Create a server from a name
+            server1 = ServerManager.create_server(Path("path/to/your/kherimoya/installation"), "newserver1")
+
+            # Create a server from a nonexisting KherimoyaServer
+            server2 = KherimoyaServer(PROJECT_PATH, "newserver2")
+            server2 = ServerManager.create_server(server2)
+            ```
+        """
+        if isinstance(server, KherimoyaServer):
+            if server.exists:
+                raise FileExistsError("Server already exists")
+            new_server = server
+        else:
+            new_server = KherimoyaServer(self.project_path, server)
+
+        if new_server.exists:
+            raise exceptions.ServerCreationError(f"Server '{new_server.name}' already exists.")
+        elif new_server.name in self.list_server_names() and self.strict_names:
+            raise exceptions.ServerCreationError(f"Server with name '{new_server.name}' already exists, and strict_names is enabled.")
+        elif new_server.name.strip() == "":
+            raise exceptions.ServerCreationError("Server name cannot be empty or whitespace.")
+        elif "-" in new_server.name or ":" in new_server.name or "/" in new_server.name or "\\" in new_server.name or DELIMITER in new_server.name:
+            raise exceptions.ServerCreationError(f"Server name cannot contain '-', ':', '/', '{DELIMITER}', or '\\' characters.")
+
+        
 
     def delete_server(self, server: KherimoyaServer) -> None:
         """

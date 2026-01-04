@@ -14,7 +14,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args))
             const commits = github.context.payload.commits
             const webhook = process.env.DISCORD_WEBHOOK
             
