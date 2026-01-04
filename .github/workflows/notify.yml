@@ -1,0 +1,49 @@
+name: Nikolandia Notification
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send commit info to Nikolandia
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args))
+            const commits = github.context.payload.commits
+            const webhook = process.env.DISCORD_WEBHOOK
+            
+            for (const c of commits) {
+              const commitID = c.id.substring(0, 7)
+              const formatList = (arr) => arr.length > 0 ? arr.join('\n').substring(0, 1000) : 'none'
+            
+              const payload = {
+                embeds: [{
+                  title: 'new commits pushed to kherimoya!!!',
+                  description: `*${c.message}*\n\n\`${commitID}\``,
+                  color: 11763417,
+                  fields: [
+                    { name: 'added', value: formatList(c.added) },
+                    { name: 'removed', value: formatList(c.removed) },
+                    { name: 'modified', value: formatList(c.modified) }
+                  ],
+                  author: { 
+                    name: c.author.name, 
+                    icon_url: `https://github.com/${c.author.username}.png` 
+                  }
+                }]
+              }
+            
+              await fetch(webhook, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              })
+            }
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
