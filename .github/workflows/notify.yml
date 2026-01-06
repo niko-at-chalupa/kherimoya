@@ -44,11 +44,6 @@ jobs:
                   title: 'new commits pushed to kherimoya!!!',
                   description: `*${c.message}*\n\n\`${commitID}\``,
                   color: 11763417,
-                  fields: [
-                    { name: 'added', value: formatList(c.added) },
-                    { name: 'removed', value: formatList(c.removed) },
-                    { name: 'modified', value: formatList(c.modified) }
-                  ],
                   author: {
                     name: c.author && c.author.name ? c.author.name : 'unknown',
                     icon_url: c.author && c.author.username ? `https://github.com/${c.author.username}.png` : undefined
