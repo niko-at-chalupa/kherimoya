@@ -505,7 +505,7 @@ class ServerManager:
 
         for server in self.list_server_objects():            
             # check if the ID is already seen
-            if server.server_id.lower() in seen_ids:
+            if (server.server_id or "").lower() in seen_ids:
                 # generate a new unique ID for this server, renaming the folder accordingly
                 server._server_id = self._generate_unique_id()
                 new_path = (server.path.parent / f"{server.name}{DELIMITER}{server.server_id}").resolve()
@@ -513,13 +513,14 @@ class ServerManager:
                 server.refresh(new_path) # refresh sets the name and id
                 conflicts_found = True
             else:
-                seen_ids.add(server.server_id.lower())
-            
+                if server.server_id is not None:
+                    seen_ids.add(server.server_id.lower())
+
         return conflicts_found
 
     # - server actions - #
 
-    def _create_server_with_python(self, server: KherimoyaServer, install_timeout: float | None = 300) -> None:
+    def _create_server_with_python(self, server: KherimoyaServer, install_timeout: float | None = 300) -> KherimoyaServer:
         """
         Creates a new server using the Python method (endstone).
 
@@ -646,8 +647,7 @@ class ServerManager:
 
         return new_server
 
-
-    def create_server(self, server: str | KherimoyaServer, install_timeout: float | None = 300, method: Literal["python", "docker"]) -> KherimoyaServer:
+    def create_server(self, server: str | KherimoyaServer, install_timeout: float | None = 300, method: Literal["python", "docker"] = "python") -> KherimoyaServer:
         """
         Creates a new server from a string for the name, or a nonexisting KherimoyaServer
 
@@ -685,7 +685,10 @@ class ServerManager:
         elif "-" in new_server.name or ":" in new_server.name or "/" in new_server.name or "\\" in new_server.name or DELIMITER in new_server.name:
             raise exceptions.ServerCreationError(f"Server name cannot contain '-', ':', '/', '{DELIMITER}', or '\\' characters.")
 
-        
+        if method == "python":
+            return self._create_server_with_python(new_server, install_timeout=install_timeout)        
+        elif method == "docker":
+            raise NotImplementedError("Docker method is not yet implemented.")
 
     def delete_server(self, server: KherimoyaServer) -> None:
         """
