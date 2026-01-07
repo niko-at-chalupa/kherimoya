@@ -30,6 +30,7 @@ The following features <strong>WILL</strong> be included in Kherimoya in the fut
     <li>Automatic server backups
     <li>Extensions
     <li>aarch64 support
+    <li>Containerization
 </ul>
 The following features <strong>MAY</strong> be includeded in Kherimoya in the future
 <ul>
