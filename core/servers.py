@@ -96,8 +96,9 @@ class KherimoyaServer:
                 window = session.windows[0]
                 pane = window.panes[0]
 
-                # run the server start command
-                pane.send_keys(f'bash -c \'export HISTCONTROL=ignoreboth; {sys.executable} -m endstone -y -s "{base_path / "server"}"; echo __FINISHED__\'; exit', enter=True)
+                venv_path = Path(sys.executable).parent.parent
+                pane.send_keys(f'bash -c \'source {venv_path}/bin/activate && export HISTCONTROL=ignoreboth && {sys.executable} -m endstone -y -s "{base_path / "server"}"; echo __FINISHED__\'; exit', enter=True)
+
 
             except Exception as e:
                 raise exceptions.ServerStartError(f"Failed to start tmux session for server {session_name}") from e
