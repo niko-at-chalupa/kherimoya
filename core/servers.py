@@ -13,6 +13,7 @@ import time
 import sys
 import logging
 import platform
+import yaml
 
 try:
     import endstone # unused, only here to ensure endstone is installed #type: ignore
@@ -159,6 +160,7 @@ class KherimoyaServer:
     def __init__(self, project_path: Path, name: str, server_id: str | None = None):
         self._project_path = project_path
         self._name = name
+        self._type = None
 
         if server_id:
             self._path = Path(project_path / "servers" / f"{name}{DELIMITER}{server_id}").resolve()
@@ -185,14 +187,15 @@ class KherimoyaServer:
     
     # --- properties --- #
 
+    _name: str = ''
+    _server_id: str | None = None
+    _path: Path
+    _exists: bool = False
+    _running: bool = False 
+    _type: Literal['python', 'docker'] | None = None
+
     # We do this so that it's a a bit harder for external things to change attributes, and making the real attributes private emphasizes that we don't want others to change them
     # Attributes like KherimoyaServer._name and KherimoyaServer._server_id are based off of the server's actual folder, and since KherimoyaServer represents that folder, we only really change them in KherimoyaServer.refresh()
-
-    # name: str = ''
-    # server_id: str | None = None
-    # path: Path
-    # exists: bool = False
-    # running: bool = False
 
     @property
     def name(self) -> str:
@@ -217,6 +220,10 @@ class KherimoyaServer:
     @property
     def actions(self) -> "KherimoyaServer._Actions":
         return self._actions
+    
+    @property
+    def type(self) -> Literal['python', 'docker'] | None:
+        return self._type
 
     # --- methods --- #
 
@@ -245,6 +252,11 @@ class KherimoyaServer:
         if path.parent.name != "servers":
             raise exceptions.ServerNotInPathError(
                 f"Path passed into load_and_save_metadata_plus_self is not in servers/"
+            )
+        
+        if DELIMITER not in path.name:
+            raise exceptions.ImproperServerError(
+                f"Path passed into load_and_save_metadata_plus_self does not have a valid server folder name (missing '{DELIMITER}' to separate name & ID): {path.name}"
             )
 
         # --- set name, id, & path ---
@@ -643,6 +655,11 @@ class ServerManager:
         # - finishing up - #
         with open(base_path / "state" / "state.json", "w", encoding="utf-8") as f:
             json.dump({"running": False}, f, indent=4) 
+
+        with open(base_path / "kherimoya.yaml", "w") as f:
+            yaml.dump({
+                "type": "python"
+            }, f)
 
         self.logger.info(f"Successfully created server: {new_server.name}{DELIMITER}{new_server.server_id}")
 

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 if [ "$(uname -m)" == "aarch64" ]; then
     echo "This script is intended for for x86_64 only! Use setup_arm.sh instead"
     exit 1

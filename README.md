@@ -62,6 +62,9 @@ Kherimoya **will** be mostly just a backend for server management. This means yo
 
 Download the latest .zip from [releases](https://github.com/niko-at-chalupa/kherimoya/releases/)
 
+> [!NOTE]
+> If you want the latest ~~and greatest~~ release of Kherimoya, get a nightly-release or setup manually
+
 > **On x86_64 architectures** *(likely)*
 > Run setup.sh within scripts/setup/
 > ```bash
