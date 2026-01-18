@@ -14,6 +14,7 @@ import sys
 import logging
 import platform
 import yaml
+import shlex
 
 try:
     import endstone # unused, only here to ensure endstone is installed #type: ignore
@@ -77,6 +78,7 @@ class KherimoyaServer:
 
             try:  # start session
                 tmux_server = libtmux.Server()
+                tmux_server.cmd("set-option", "-g", "default-shell", "/bin/bash")
                 
                 # kill any existing session with the same name
                 try:
@@ -86,21 +88,18 @@ class KherimoyaServer:
                 except Exception:
                     pass
 
-                # create new session
+                script_path = Path(PROJECT_PATH / "core" / "_scripts" / "start_endstone.sh").resolve()
+
+                window_command = f"bash --norc --noprofile -lc \"chmod +x {script_path} && {script_path} {sys.executable} {base_path}; exit\""
+
                 session = tmux_server.new_session(
                     session_name=session_name,
                     start_directory=str(base_path / "server"),
-                    kill_session=True
+                    window_command=window_command
                 )
-
 
                 window = session.windows[0]
                 pane = window.panes[0]
-
-                venv_path = Path(sys.executable).parent.parent
-                pane.send_keys(f'bash -c \'source {venv_path}/bin/activate && export HISTCONTROL=ignoreboth && {sys.executable} -m endstone -y -s "{base_path / "server"}"; echo __FINISHED__\'; exit', enter=True)
-
-
             except Exception as e:
                 raise exceptions.ServerStartError(f"Failed to start tmux session for server {session_name}") from e
         
@@ -565,6 +564,7 @@ class ServerManager:
 
         try:  # start session
             tmux_server = libtmux.Server()
+            tmux_server.cmd("set-option", "-g", "default-shell", "/bin/bash")
             
             # kill any existing session with the same name
             try:
@@ -574,20 +574,20 @@ class ServerManager:
             except Exception:
                 pass
 
-            # create new session
+            script_path = Path(PROJECT_PATH / "core" / "_scripts" / "start_endstone.sh").resolve()
+
+            window_command = f"bash --norc --noprofile -lc \"chmod +x {script_path} && {script_path} {sys.executable} {base_path}; exit\""
+
+            self.logger.info(f"Using window command: `{window_command}`")
+
             session = tmux_server.new_session(
                 session_name=session_name,
                 start_directory=str(base_path / "server"),
-                kill_session=True
+                window_command=window_command
             )
 
-            # use the first window and pane (attached_window/attached_pane removed)
             window = session.windows[0]
             pane = window.panes[0]
-
-            # run the server start command
-            pane.send_keys(f'bash -c \'export HISTCONTROL=ignoreboth; {sys.executable} -m endstone -y -s "{base_path / "server"}"; echo __FINISHED__\'; exit', enter=True)
-
         except Exception as e:
             # delete base_path
             self.logger.error(f"Failed to create tmux session for server {session_name}, cleaning up created files.")
