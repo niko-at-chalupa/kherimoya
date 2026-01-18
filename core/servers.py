@@ -90,9 +90,9 @@ class KherimoyaServer:
                 session = tmux_server.new_session(
                     session_name=session_name,
                     start_directory=str(base_path / "server"),
-                    attach=False,
                     kill_session=True
                 )
+
 
                 window = session.windows[0]
                 pane = window.panes[0]
