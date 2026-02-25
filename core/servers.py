@@ -146,9 +146,7 @@ class KherimoyaServer:
             pass
 
         def _stop_through_plugin(self, server):
-            # TODO: When the plugin is finished, make it use the port for the server to stop the server.
-            # Example URI: {ip}:{port}/{name}{DELIMITER}{id}/stop_server
-            pass
+            raise NotImplementedError
 
     def __repr__(self) -> str:
         return (
@@ -192,9 +190,6 @@ class KherimoyaServer:
     _exists: bool = False
     _running: bool = False 
     _type: Literal['python', 'docker'] | None = None
-
-    # We do this so that it's a a bit harder for external things to change attributes, and making the real attributes private emphasizes that we don't want others to change them
-    # Attributes like KherimoyaServer._name and KherimoyaServer._server_id are based off of the server's actual folder, and since KherimoyaServer represents that folder, we only really change them in KherimoyaServer.refresh()
 
     @property
     def name(self) -> str:
@@ -462,7 +457,6 @@ class ServerManager:
         GROUP_SIZE = 4
         MAX_RANDOM_TRIES = max_random_tries
 
-        # collect existing IDs, lowercased and filter None entries
         existing = [str(x).lower() for x in self.list_server_ids() if isinstance(x, str) and x is not None]
         existing_set = set(existing)
 
@@ -482,22 +476,16 @@ class ServerManager:
             existing_of_length = sum(1 for e in existing_set if pattern.match(e))
             space_size = len(ALPHABET) ** (GROUP_SIZE * groups)
 
-            # if space is frozen (all combos used), try next groups count
             if existing_of_length >= space_size:
-                continue
+                continue # try next groups count
 
-            # try to find a new ID with random tries
             for _ in range(MAX_RANDOM_TRIES):
                 candidate = _random_id(groups)
                 if candidate not in existing_set:
                     self.logger.info(f"Generated unique ID: {candidate}")
                     return candidate
 
-            # if we couldn't find a unique ID after MAX_RANDOM_TRIES (very unlikely),
-            # continue to next groups count and try again.
-
         # as a last fallback (VERY unlikely), generate a uuid4 to be safe.
-        # this keeps compatibility with old long IDs and guarantees uniqueness.
         while True:
             candidate = str(uuid.uuid4())
             if candidate.lower() not in existing_set:
