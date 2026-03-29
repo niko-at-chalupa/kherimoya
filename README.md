@@ -7,7 +7,10 @@
 </div>
 
 > [!IMPORTANT]
-> Kherimoya is still in its **early development stages**, which means that it's not in the best state right now. I wouldn't recommend Kherimoya yet as it doesn't offer enough features.
+> ~~Kherimoya is still in its **early development stages**, which means that it's not in the best state right now. I wouldn't recommend Kherimoya yet as it doesn't offer enough features.~~
+
+> [!IMPORTANT]
+> Kherimoya will no longer be worked on. Kherimoya will take the form of Kherimoya2 in the future *(more than just endstone)*
 
 ## introduction
 Kherimoya is a Minecraft Bedrock server management tool which uses [Endstone](https://github.com/EndstoneMC/endstone), meant for people who host a lot of servers *(a great example for a use case right now would be for a minecraft bedrock server hosting service)*.
